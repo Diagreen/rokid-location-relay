@@ -1,0 +1,19 @@
+name: RokidLocation
+options:
+  bundleIdPrefix: dev.rokid
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  RokidLocation:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.rokid.location
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: "NO"
+        INFOPLIST_FILE: Info.plist
+        SWIFT_STRICT_CONCURRENCY: minimal
+        ENABLE_USER_SCRIPT_SANDBOXING: "YES"

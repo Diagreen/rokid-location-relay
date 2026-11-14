@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+ <key>CFBundleDisplayName</key><string>Rokid 위치 연결</string>
+ <key>CFBundleName</key><string>RokidLocation</string>
+ <key>CFBundleIdentifier</key><string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+ <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
+ <key>CFBundlePackageType</key><string>APPL</string>
+ <key>CFBundleShortVersionString</key><string>0.1.0</string>
+ <key>CFBundleVersion</key><string>1</string>
+ <key>UILaunchScreen</key><dict/>
+ <key>NSLocationWhenInUseUsageDescription</key><string>안경 내비게이션에 현재 위치를 전달합니다.</string>
+ <key>NSLocationAlwaysAndWhenInUseUsageDescription</key><string>화면을 잠근 상태에서도 안경 길 안내에 위치를 전달합니다.</string>
+ <key>NSLocalNetworkUsageDescription</key><string>같은 Wi-Fi의 Rokid 안경에 위치를 전송합니다.</string>
+ <key>UIBackgroundModes</key><array><string>location</string></array>
+ <key>NSAppTransportSecurity</key><dict><key>NSAllowsLocalNetworking</key><true/><key>NSAllowsArbitraryLoads</key><true/></dict>
+</dict></plist>

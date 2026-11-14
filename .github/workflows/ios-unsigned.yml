@@ -1,0 +1,46 @@
+name: Build iPhone IPA (unsigned, free account)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-unsigned-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # Never consume private-repository compute credits through this workflow.
+    if: github.event.repository.private == false
+    runs-on: macos-15
+    timeout-minutes: 20
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_INSTALL_CLEANUP: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare XcodeGen
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          if ! command -v xcodegen >/dev/null; then brew install xcodegen; fi
+          xcodegen --version
+      - name: Build and inspect unsigned device IPA
+        run: |
+          python3 -m unittest discover -s tests -p test_verify_ipa.py -v
+          bash scripts/build-ios-unsigned.sh
+      - name: Save downloadable IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: RokidLocation-unsigned-IPA
+          path: |
+            dist/RokidLocation-unsigned.ipa
+            dist/RokidLocation-unsigned.ipa.sha256
+            dist/ios-build-info.txt
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
