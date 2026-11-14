@@ -36,6 +36,8 @@ jobs:
         run: |
           swiftc ios/Sources/PairingProtocol.swift tests/PairingProtocolTest.swift -o /tmp/rokid-pairing-tests
           /tmp/rokid-pairing-tests
+          swiftc ios/Sources/PairingProtocol.swift ios/Sources/DiscoveryPlan.swift tests/DiscoveryPlanTest.swift -o /tmp/rokid-discovery-tests
+          /tmp/rokid-discovery-tests
           python3 -m unittest discover -s tests -p test_verify_ipa.py -v
           bash scripts/build-ios-unsigned.sh
       - name: Save downloadable IPA

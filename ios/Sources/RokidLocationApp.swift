@@ -7,12 +7,32 @@ import CoreLocation
 }
 
 @MainActor final class LocationRelay: NSObject, ObservableObject, CLLocationManagerDelegate {
-    @Published var address = UserDefaults.standard.string(forKey: "address") ?? "http://192.168.1.10:8765"
+    @Published var address = UserDefaults.standard.string(forKey: "address") ?? ""
     // Pairing secrets stay in memory; only the address is persisted.
     @Published var code = ""
     @Published var pairing = false
-    @Published var status = "안경에 표시된 IP와 6자리 연결 코드를 입력하세요."
+    @Published var status = "안경 자동 탐색 후 6자리 연결 코드를 입력하세요."
     @Published var active = false
+    @Published var discovering = false
+    @Published var devices: [String] = []
+    @Published var sentCount = 0
+    private lazy var discovery: GlassesDiscovery = {
+        let value = GlassesDiscovery()
+        value.onFound = { [weak self] base in
+            guard let self else { return }
+            self.devices.append(base)
+            if self.devices.count == 1 { self.address = base }
+            self.status = "안경 발견: \(self.devices.count)대 · 6자리 코드를 입력하고 위치 전송을 시작하세요."
+        }
+        value.onStatus = { [weak self] message in self?.status = message }
+        value.onFinished = { [weak self] in self?.discovering = false }
+        return value
+    }()
+    func findGlasses() {
+        guard !active && !pairing else { return }
+        devices = []; address = ""; discovering = true; discovery.start()
+    }
+
     private let manager = CLLocationManager()
     private var destination: URL?
     private var sessionToken = ""
@@ -34,7 +54,7 @@ import CoreLocation
     func start() {
         let input = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let base = PairingProtocol.baseURL(input) else {
-            status = "개인 Wi-Fi IPv4 주소와 포트 8765를 확인하세요."; return
+            findGlasses(); return
         }
         guard !pairing else { return }
         if code.isEmpty, pairedAddress == base.absoluteString, !sessionToken.isEmpty {
@@ -43,7 +63,7 @@ import CoreLocation
         guard PairingProtocol.validCode(code) else {
             status = "안경에 표시된 숫자 6자리를 입력하세요."; return
         }
-        stop(); pairing = true; sessionToken = ""; pairedAddress = nil
+        stop(); sentCount = 0; pairing = true; sessionToken = ""; pairedAddress = nil
         let current = generation
         var request = URLRequest(url: base.appendingPathComponent("pair"))
         request.httpMethod = "POST"; request.timeoutInterval = 5
@@ -76,6 +96,7 @@ import CoreLocation
     }
     func enableBackground() { manager.requestAlwaysAuthorization() }
     func stop() {
+        discovery.stop(); discovering = false
         active = false; pairing = false; generation = UUID(); task?.cancel(); task = nil
         manager.stopUpdatingLocation(); status = "위치 전송 중지"
     }
@@ -107,7 +128,8 @@ import CoreLocation
                 guard let self, self.generation == current else { return }; self.task = nil
                 if let error { self.status = "연결 대기: \(error.localizedDescription)" }
                 else if (response as? HTTPURLResponse)?.statusCode == 200 {
-                    self.status = "안경 연결됨 · 위치 오차 약 \(Int(location.horizontalAccuracy)) m"
+                    self.sentCount += 1
+                    self.status = "위치 전송 성공 \(self.sentCount)회 · 오차 약 \(Int(location.horizontalAccuracy)) m"
                 } else if (response as? HTTPURLResponse)?.statusCode == 401 {
                     self.stop(); self.sessionToken = ""; self.pairedAddress = nil
                     self.status = "연결 만료 · 안경 설정에서 코드를 재발급한 뒤 입력하세요."
@@ -123,8 +145,12 @@ struct ContentView: View {
         NavigationStack {
             Form {
                 Section("1 · 같은 Wi-Fi / iPhone 개인용 핫스팟") {
-                    Text("안경 Wi-Fi를 연결하고 APK를 시작하세요. 안경의 IP와 6자리 연결 코드를 아래에 입력합니다. 코드는 5분간 유효하며 한 번만 사용할 수 있습니다.")
-                    TextField("http://안경IP:8765", text: $relay.address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).disabled(relay.active || relay.pairing)
+                    Text("안경을 이 iPhone의 핫스팟 또는 같은 Wi-Fi에 연결하고 안경 앱을 실행하세요. 자동 탐색 후 6자리 코드만 입력하면 됩니다.")
+                    Button(relay.discovering ? "안경 탐색 중… 다시 찾기" : "안경 자동 탐색") { relay.findGlasses() }.disabled(relay.active || relay.pairing)
+                    ForEach(relay.devices, id: \.self) { device in
+                        Button((relay.address == device ? "✓ " : "") + device) { relay.address = device }.disabled(relay.active || relay.pairing)
+                    }
+                    TextField("자동으로 찾은 안경 주소 / 직접 입력 가능", text: $relay.address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).disabled(relay.active || relay.pairing)
                     TextField("6자리 일회용 코드", text: $relay.code).keyboardType(.numberPad).textContentType(.oneTimeCode).autocorrectionDisabled().disabled(relay.active || relay.pairing)
                 }
                 Section("2 · 위치 연결") {
@@ -139,10 +165,3 @@ struct ContentView: View {
     }
 }
 
-// Never forward pairing codes or session tokens to a redirect destination.
-private final class NoRedirects: NSObject, URLSessionTaskDelegate {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest,
-                    completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
-}
