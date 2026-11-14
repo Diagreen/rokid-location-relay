@@ -8,13 +8,17 @@ import CoreLocation
 
 @MainActor final class LocationRelay: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var address = UserDefaults.standard.string(forKey: "address") ?? "http://192.168.1.10:8765"
-    // Session token is intentionally not persisted; each glasses launch generates a new token.
-    @Published var token = ""
-    @Published var status = "안경에 표시된 IP와 연결 토큰을 입력하세요."
+    // Pairing secrets stay in memory; only the address is persisted.
+    @Published var code = ""
+    @Published var pairing = false
+    @Published var status = "안경에 표시된 IP와 6자리 연결 코드를 입력하세요."
     @Published var active = false
     private let manager = CLLocationManager()
     private var destination: URL?
     private var sessionToken = ""
+    private var pairedAddress: String?
+    private let redirects = NoRedirects()
+    private lazy var session = URLSession(configuration: .ephemeral, delegate: redirects, delegateQueue: nil)
     private var task: URLSessionDataTask?
     private var sentAt = Date.distantPast
     private var generation = UUID()
@@ -28,30 +32,51 @@ import CoreLocation
         manager.showsBackgroundLocationIndicator = true
     }
     func start() {
-        guard let parts = URLComponents(string: address.trimmingCharacters(in: .whitespacesAndNewlines)),
-              parts.scheme == "http", let host = parts.host,
-              Self.isPrivateIPv4(host), parts.port == 8765,
-              (parts.path.isEmpty || parts.path == "/"), parts.user == nil, parts.password == nil,
-              parts.query == nil, parts.fragment == nil,
-              token.count == 32, token.allSatisfy({ $0.isHexDigit }),
-              let url = URL(string: "http://\(host):8765/fix") else {
-            status = "개인 Wi-Fi IPv4 주소, 포트 8765, 32자리 토큰을 확인하세요."; return
+        let input = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let base = PairingProtocol.baseURL(input) else {
+            status = "개인 Wi-Fi IPv4 주소와 포트 8765를 확인하세요."; return
         }
-        stop(); destination = url; sessionToken = token.lowercased(); active = true
-        generation = UUID(); UserDefaults.standard.set(address, forKey: "address")
-        manager.requestWhenInUseAuthorization()
-        manager.startUpdatingLocation()
-        status = "위치 권한과 정확한 위치를 허용하세요. 연결 확인 중…"
+        guard !pairing else { return }
+        if code.isEmpty, pairedAddress == base.absoluteString, !sessionToken.isEmpty {
+            beginLocation(base); return
+        }
+        guard PairingProtocol.validCode(code) else {
+            status = "안경에 표시된 숫자 6자리를 입력하세요."; return
+        }
+        stop(); pairing = true; sessionToken = ""; pairedAddress = nil
+        let current = generation
+        var request = URLRequest(url: base.appendingPathComponent("pair"))
+        request.httpMethod = "POST"; request.timeoutInterval = 5
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["code": code])
+        status = "안경과 연결 중…"
+        task = session.dataTask(with: request) { [weak self] data, response, error in
+            Task { @MainActor in
+                guard let self, self.generation == current else { return }
+                self.task = nil; self.pairing = false
+                if let error {
+                    self.status = "연결 실패: \(error.localizedDescription) · 코드가 이미 사용됐다면 안경 설정에서 재발급하세요."
+                    return
+                }
+                let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+                guard statusCode == 200, let data, let token = PairingProtocol.token(from: data) else {
+                    self.status = PairingProtocol.errorMessage(statusCode); return
+                }
+                self.sessionToken = token; self.pairedAddress = base.absoluteString; self.code = ""
+                self.beginLocation(base)
+            }
+        }; task?.resume()
     }
-    static func isPrivateIPv4(_ host: String) -> Bool {
-        let octets = host.split(separator: ".").compactMap { Int($0) }
-        guard octets.count == 4, octets.allSatisfy({ (0...255).contains($0) }) else { return false }
-        return octets[0] == 10 || (octets[0] == 192 && octets[1] == 168) ||
-            (octets[0] == 172 && (16...31).contains(octets[1]))
+    private func beginLocation(_ base: URL) {
+        destination = base.appendingPathComponent("fix"); active = true
+        generation = UUID(); sentAt = .distantPast
+        UserDefaults.standard.set(base.absoluteString, forKey: "address")
+        manager.requestWhenInUseAuthorization(); manager.startUpdatingLocation()
+        status = "페어링 완료 · 위치 권한과 정확한 위치를 허용하세요."
     }
     func enableBackground() { manager.requestAlwaysAuthorization() }
     func stop() {
-        active = false; generation = UUID(); task?.cancel(); task = nil
+        active = false; pairing = false; generation = UUID(); task?.cancel(); task = nil
         manager.stopUpdatingLocation(); status = "위치 전송 중지"
     }
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
@@ -77,14 +102,15 @@ import CoreLocation
         request.setValue(sessionToken, forHTTPHeaderField: "X-Rokid-Token")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-        task = URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+        task = session.dataTask(with: request) { [weak self] _, response, error in
             Task { @MainActor in
                 guard let self, self.generation == current else { return }; self.task = nil
                 if let error { self.status = "연결 대기: \(error.localizedDescription)" }
                 else if (response as? HTTPURLResponse)?.statusCode == 200 {
                     self.status = "안경 연결됨 · 위치 오차 약 \(Int(location.horizontalAccuracy)) m"
                 } else if (response as? HTTPURLResponse)?.statusCode == 401 {
-                    self.status = "토큰 불일치 — 안경에 표시된 새 토큰을 입력하세요."
+                    self.stop(); self.sessionToken = ""; self.pairedAddress = nil
+                    self.status = "연결 만료 · 안경 설정에서 코드를 재발급한 뒤 입력하세요."
                 } else { self.status = "위치 거부: 시각·정확도·휴대전화 시간 설정을 확인하세요." }
             }
         }; task?.resume()
@@ -97,12 +123,12 @@ struct ContentView: View {
         NavigationStack {
             Form {
                 Section("1 · 같은 Wi-Fi / iPhone 개인용 핫스팟") {
-                    Text("안경 Wi-Fi를 연결하고 APK를 시작하세요. 안경의 IP와 토큰을 아래에 입력합니다.")
-                    TextField("http://안경IP:8765", text: $relay.address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).disabled(relay.active)
-                    TextField("32자리 연결 토큰", text: $relay.token).textInputAutocapitalization(.never).autocorrectionDisabled().disabled(relay.active)
+                    Text("안경 Wi-Fi를 연결하고 APK를 시작하세요. 안경의 IP와 6자리 연결 코드를 아래에 입력합니다. 코드는 5분간 유효하며 한 번만 사용할 수 있습니다.")
+                    TextField("http://안경IP:8765", text: $relay.address).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL).disabled(relay.active || relay.pairing)
+                    TextField("6자리 일회용 코드", text: $relay.code).keyboardType(.numberPad).textContentType(.oneTimeCode).autocorrectionDisabled().disabled(relay.active || relay.pairing)
                 }
                 Section("2 · 위치 연결") {
-                    Button(relay.active ? "위치 전송 중지" : "위치 전송 시작") { if relay.active { relay.stop() } else { relay.start() } }
+                    Button(relay.active ? "위치 전송 중지" : "위치 전송 시작") { if relay.active { relay.stop() } else { relay.start() } }.disabled(relay.pairing)
                     Button("백그라운드 위치 권한 요청") { relay.enableBackground() }
                     Text(relay.status)
                     Text("위치 권한의 ‘정확한 위치’를 켜세요. 화면 잠금 후 연결 지속 여부는 iPhone 실기기에서 확인해야 합니다.").font(.footnote)
@@ -111,4 +137,12 @@ struct ContentView: View {
             }.navigationTitle("Rokid 위치 연결")
         }
     }
+}
+
+// Never forward pairing codes or session tokens to a redirect destination.
+private final class NoRedirects: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
 }

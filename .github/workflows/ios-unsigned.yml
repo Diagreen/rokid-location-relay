@@ -2,6 +2,9 @@ name: Build iPhone IPA (unsigned, free account)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["ios/**", "scripts/**", "tests/**", ".github/workflows/ios-unsigned.yml"]
 
 permissions:
   contents: read
@@ -31,6 +34,8 @@ jobs:
           xcodegen --version
       - name: Build and inspect unsigned device IPA
         run: |
+          swiftc ios/Sources/PairingProtocol.swift tests/PairingProtocolTest.swift -o /tmp/rokid-pairing-tests
+          /tmp/rokid-pairing-tests
           python3 -m unittest discover -s tests -p test_verify_ipa.py -v
           bash scripts/build-ios-unsigned.sh
       - name: Save downloadable IPA

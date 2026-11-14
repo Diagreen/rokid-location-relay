@@ -46,9 +46,9 @@
 
 ## 4. 안경 연결 및 화면 잠금 시험
 
-1. 안경에는 기존 `rokid-osm-voice-0.1.0-arm64-debug.apk`를 설치합니다. APK는 변경하지 않았습니다.
+1. 안경에는 6자리 페어링을 지원하는 `rokid-osm-voice-0.2.0-arm64-debug.apk`를 설치합니다. iPhone 앱과 APK를 함께 업데이트해야 합니다.
 2. 안경과 iPhone을 같은 Wi-Fi 또는 개인용 핫스팟으로 연결합니다.
-3. iPhone 앱에 안경의 IP(`http://…:8765`)와 현재 32자리 연결 토큰을 입력합니다.
+3. iPhone 앱에 안경의 IP(`http://…:8765`)와 6자리 일회용 연결 코드을 입력합니다.
 4. 위치 전송을 시작하고 **정확한 위치**, **로컬 네트워크** 권한을 허용합니다. 백그라운드 위치 권한 버튼도 확인합니다.
 5. 처음에는 실외에서 iPhone 화면을 켠 채 위치 전달과 도보 경로를 확인합니다.
 6. iPhone 화면을 잠그고 최소 10분간 위치 갱신이 지속되는지 확인합니다. 이후 자전거 시험을 진행합니다. 네이티브 백그라운드 위치 설정을 유지하지만 실기기 지속 동작을 보증한 상태는 아닙니다.
@@ -59,3 +59,10 @@
 - GitHub runner 및 무료 공개 저장소 실행: https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job
 - AltStore Windows 설치: https://faq.altstore.io/altstore-classic/how-to-install-altstore-windows
 - 무료 계정의 7일 만료와 갱신: https://faq.altstore.io/altstore-classic/your-altstore
+
+
+## 6자리 페어링 (0.2.0)
+
+코드는 안경 실행 시 발급되며 5분간 유효합니다. 5회 틀리면 잠기고 성공한 코드는 재사용할 수 없습니다. 안경 설정의 **코드 재발급**으로 다시 연결할 수 있습니다. 새 코드 발급은 기존 연결을 해제합니다. 내부 인증 토큰은 자동 교환되며 화면에 표시하거나 저장하지 않습니다. iPhone에서 전송을 중지했다 다시 시작할 때는 앱이 열려 있는 동안 기존 연결을 재사용합니다. 앱을 완전히 종료했거나 안경을 다시 실행했다면 새 코드로 연결하세요. 응답 손실로 이미 사용한 코드라는 메시지가 뜨면 안경에서 재발급하세요.
+
+현재 로컬 HTTP 연결은 암호화되지 않으므로 신뢰할 수 있는 개인 Wi-Fi나 개인용 핫스팟에서 사용하세요. 이 코드는 도청 방지 수단이 아닙니다.
