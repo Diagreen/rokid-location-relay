@@ -8,7 +8,9 @@
 - `scripts/build-ios-unsigned.sh`: XcodeGen 프로젝트 생성, 실제 기기용 ARM64 앱 빌드, IPA 생성.
 - `scripts/verify_ipa.py`: 패키지 구조, 기기용 플랫폼, 위치 권한 문구, 백그라운드 위치 설정, 실행 파일 및 서명 자료 미포함 확인.
 - Apple 비밀번호·배포 인증서·서명 키를 클라우드에 입력할 필요가 없습니다.
-- 워크플로 설정만 준비된 상태이며, 첫 macOS 빌드 성공이나 IPA 생성은 실제 Actions 실행 결과로 확인해야 합니다.
+- **첫 클라우드 빌드 성공:** [빌드 #1](https://github.com/Diagreen/rokid-location-relay/actions/runs/43556320834). Xcode 16.4에서 iPhone ARM64 컴파일, 테스트 4개, IPA 구조 검사를 통과했습니다.
+- [IPA ZIP 다운로드](https://github.com/Diagreen/rokid-location-relay/actions/runs/43556320834/artifacts/14098871004) · GitHub 아티팩트 보존 기간 3일. 다운로드한 IPA는 AltStore에서 서명·설치해야 합니다.
+- 실제 iPhone 설치 및 화면 잠금 상태 위치 전달은 아직 미검증입니다.
 
 ## 1. GitHub에 빌드 프로젝트 올리기
 
