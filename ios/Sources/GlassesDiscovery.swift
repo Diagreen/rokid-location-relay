@@ -84,23 +84,34 @@ import Darwin
     func netServiceDidResolveAddress(_ sender: NetService) {
         guard services.contains(where: { $0 === sender }), sender.port == 8765 else { return }
         let current = generation
+        var bases: [String] = []
+        if let hostname = sender.hostName {
+            let host = hostname.hasSuffix(".") ? String(hostname.dropLast()) : hostname
+            let base = "http://\(host):8765"
+            if PairingProtocol.baseURL(base) != nil { bases.append(base) }
+        }
         for data in sender.addresses ?? [] {
-            // Darwin sockaddr_in has length/family at bytes 0/1 and network IPv4 at bytes 4...7.
             let bytes = [UInt8](data)
             guard bytes.count >= 8, bytes[1] == UInt8(AF_INET) else { continue }
             let host = bytes[4...7].map { String($0) }.joined(separator: ".")
             let base = "http://\(host):8765"
-            guard PairingProtocol.baseURL(base) != nil, let url = URL(string: base + "/health") else { continue }
-            probes.append(Task { [weak self] in
-                guard let self else { return }
+            if PairingProtocol.baseURL(base) != nil { bases.append(base) }
+        }
+        // Prefer the Bonjour hostname; IPv4 address remains a fallback if mDNS URL resolution fails.
+        probes.append(Task { [weak self] in
+            guard let self else { return }
+            for base in bases {
+                if Task.isCancelled || self.generation != current { return }
+                guard let url = URL(string: base + "/health") else { continue }
                 do {
                     let (data,response) = try await self.session.data(from: url)
                     if !Task.isCancelled, self.generation == current,
-                       (response as? HTTPURLResponse)?.statusCode == 200, DiscoveryPlan.isGlasses(data) { self.found(base) }
+                       (response as? HTTPURLResponse)?.statusCode == 200, DiscoveryPlan.isGlasses(data) { self.found(base); return }
                 } catch { }
-            })
-        }
+            }
+        })
     }
+
     private static func interfaces() -> [(String,String)] {
         var list: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&list) == 0, let first = list else { return [] }

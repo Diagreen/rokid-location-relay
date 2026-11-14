@@ -8,6 +8,11 @@ enum PairingProtocol {
         guard let p = URLComponents(string: input), p.scheme == "http", let host = p.host,
               p.port == 8765, (p.path.isEmpty || p.path == "/"),
               p.user == nil, p.password == nil, p.query == nil, p.fragment == nil else { return nil }
+        // A Bonjour-resolved .local hostname also works when only IPv6 is exposed.
+        let local = host.lowercased()
+        if local.range(of: "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.local$", options: .regularExpression) != nil {
+            return URL(string: "http://\(local):8765")
+        }
         let components = host.split(separator: ".", omittingEmptySubsequences: false)
         guard components.count == 4, components.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { (48...57).contains($0) } }) else { return nil }
         let o = components.compactMap { Int($0) }
