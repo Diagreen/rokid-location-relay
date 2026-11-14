@@ -11,7 +11,8 @@ enum PairingProtocol {
         let components = host.split(separator: ".", omittingEmptySubsequences: false)
         guard components.count == 4, components.allSatisfy({ !$0.isEmpty && $0.utf8.allSatisfy { (48...57).contains($0) } }) else { return nil }
         let o = components.compactMap { Int($0) }
-        guard o.count == 4, o.allSatisfy({ (0...255).contains($0) }),
+        guard zip(components, o).allSatisfy({ String($0.1) == String($0.0) }),
+              o.count == 4, o.allSatisfy({ (0...255).contains($0) }),
               o[0] == 10 || (o[0] == 192 && o[1] == 168) || (o[0] == 172 && (16...31).contains(o[1])) else { return nil }
         return URL(string: "http://\(host):8765")
     }
