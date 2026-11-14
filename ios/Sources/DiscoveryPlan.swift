@@ -36,6 +36,6 @@ enum DiscoveryPlan {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String:Any],
               json["service"] as? String == "Rokid OSM Voice",
               let version = json["version"] as? String else { return false }
-        return version.hasPrefix("0.2.") || version.hasPrefix("0.3.")
+        return version.hasPrefix("0.2.") || version.hasPrefix("0.3.") || version.hasPrefix("0.4.")
     }
 }

@@ -38,6 +38,8 @@ jobs:
           /tmp/rokid-pairing-tests
           swiftc ios/Sources/PairingProtocol.swift ios/Sources/DiscoveryPlan.swift tests/DiscoveryPlanTest.swift -o /tmp/rokid-discovery-tests
           /tmp/rokid-discovery-tests
+          swiftc ios/Sources/RelayCommand.swift tests/RelayCommandTest.swift -o /tmp/rokid-command-tests
+          /tmp/rokid-command-tests
           python3 -m unittest discover -s tests -p test_verify_ipa.py -v
           bash scripts/build-ios-unsigned.sh
       - name: Save downloadable IPA

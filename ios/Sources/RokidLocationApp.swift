@@ -33,6 +33,10 @@ import CoreLocation
         devices = []; address = ""; discovering = true; discovery.start()
     }
 
+    @Published var commandBusy = false
+    @Published var commandStatus = "목적지를 선택한 뒤 안경으로 전송하세요."
+    @Published var latestCoordinate: CLLocationCoordinate2D?
+    private var commandTask: URLSessionDataTask?
     private let manager = CLLocationManager()
     private var destination: URL?
     private var sessionToken = ""
@@ -94,8 +98,38 @@ import CoreLocation
         manager.requestWhenInUseAuthorization(); manager.startUpdatingLocation()
         status = "페어링 완료 · 위치 권한과 정확한 위치를 허용하세요."
     }
+    func sendDestination(_ place: DestinationOption, mode: TravelMode) {
+        do { try sendCommand(path:"navigate", body:RelayCommand.destination(name:place.name,latitude:place.coordinate.latitude,longitude:place.coordinate.longitude,mode:mode), success:"목적지 전송 완료 · 안경에서 GPS 확인 후 경로를 계산합니다.") }
+        catch { commandStatus = error.localizedDescription }
+    }
+    func changeMap(_ action: String) {
+        do { try sendCommand(path:"map",body:RelayCommand.map(action),success:action == "zoomOut" ? "안경 지도 축소 명령 전송 완료" : action == "zoomIn" ? "안경 지도 확대 명령 전송 완료" : "전체 경로 표시 명령 전송 완료") }
+        catch { commandStatus = error.localizedDescription }
+    }
+    private func sendCommand(path: String, body: Data, success: String) throws {
+        guard active, !sessionToken.isEmpty, let base = PairingProtocol.baseURL(address.trimmingCharacters(in:.whitespacesAndNewlines)), pairedAddress == base.absoluteString else {
+            commandStatus = "먼저 안경에 연결하고 위치 전송을 시작하세요."; return
+        }
+        guard !commandBusy else { return }
+        var request = URLRequest(url:base.appendingPathComponent(path)); request.httpMethod = "POST"; request.timeoutInterval = 5
+        request.setValue(sessionToken,forHTTPHeaderField:"X-Rokid-Token")
+        request.setValue("application/json",forHTTPHeaderField:"Content-Type"); request.httpBody = body
+        let current = generation; commandBusy = true; commandStatus = "안경에 전송 중…"
+        commandTask = session.dataTask(with:request) { [weak self] _,response,error in
+            Task { @MainActor in
+                guard let self, self.generation == current else { return }
+                self.commandBusy = false; self.commandTask = nil
+                if let error { self.commandStatus = "명령 전송 실패: \(error.localizedDescription)" }
+                else if (response as? HTTPURLResponse)?.statusCode == 202 { self.commandStatus = success }
+                else if (response as? HTTPURLResponse)?.statusCode == 401 { self.commandStatus = "연결 인증 만료 · 새 코드로 다시 연결하세요." }
+                else if (response as? HTTPURLResponse)?.statusCode == 404 { self.commandStatus = "안경 APK도 0.4.0으로 업데이트하세요." }
+                else { self.commandStatus = "명령 거부 · 연결과 목적지를 확인하세요." }
+            }
+        }; commandTask?.resume()
+    }
     func enableBackground() { manager.requestAlwaysAuthorization() }
     func stop() {
+        commandTask?.cancel(); commandTask = nil; commandBusy = false
         discovery.stop(); discovering = false
         active = false; pairing = false; generation = UUID(); task?.cancel(); task = nil
         manager.stopUpdatingLocation(); status = "위치 전송 중지"
@@ -109,6 +143,7 @@ import CoreLocation
         status = "위치 오류: \(error.localizedDescription)"
     }
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        if let location = locations.last, abs(location.timestamp.timeIntervalSinceNow) < 30 { latestCoordinate = location.coordinate }
         guard active, let location = locations.last, let url = destination,
               abs(location.timestamp.timeIntervalSinceNow) < 10,
               location.horizontalAccuracy > 0, location.horizontalAccuracy <= 35 else {
@@ -159,8 +194,8 @@ struct ContentView: View {
                     Text(relay.status)
                     Text("위치 권한의 ‘정확한 위치’를 켜세요. 화면 잠금 후 연결 지속 여부는 iPhone 실기기에서 확인해야 합니다.").font(.footnote)
                 }
-                Section("3 · 안경에서 말하기") { Text("목적지 → 후보 번호 → 자전거 또는 도보.\n음성·LLM은 안경에서 처리하며 지도 검색과 경로 계산에는 인터넷이 필요합니다.") }
-            }.navigationTitle("Rokid 위치 연결")
+                DestinationControls()
+            }.navigationTitle("Rokid 내비게이션")
         }
     }
 }

@@ -8,6 +8,8 @@ targets:
     type: application
     platform: iOS
     sources: [Sources]
+    dependencies:
+      - sdk: MapKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.rokid.location
